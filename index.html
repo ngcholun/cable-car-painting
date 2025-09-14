@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cable Car Ride (Adjustable Speed)</title>
+  <title>Cable Car Ride (Responsive Rope + Debug Line)</title>
   <style>
     body {
       margin: 0;
@@ -43,10 +43,22 @@
       width: 100%;
       height: auto;
       display: block;
+      position: relative;
+      z-index: 0;
+    }
+    #ropeOverlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1; /* rope above background */
     }
     .car-container {
       position: absolute;
       transform-origin: center center;
+      z-index: 2; /* cars above rope */
     }
     .car-container img {
       width: 120px;
@@ -55,17 +67,21 @@
   </style>
 </head>
 <body>
-  <h1>🎨 Add Up To 5 Cable Cars (Adjust Speed)</h1>
+  <h1>🎨 Upload Cabin (Auto Crop Top + Bottom)</h1>
 
   <div id="controls">
     <label for="speedSlider">Speed:</label>
     <input type="range" id="speedSlider" min="0.0002" max="0.003" step="0.0001" value="0.0007">
     <span id="speedValue">0.0007</span>
+    <button id="clearBtn">Clear All Cars</button>
+    <label><input type="checkbox" id="toggleRope" checked> Show Rope</label>
   </div>
 
   <input type="file" id="upload" accept="image/*">
+
   <div id="scene">
     <img id="background" src="mountain.jpg" alt="Cable Car Background">
+    <canvas id="ropeOverlay"></canvas>
   </div>
 
   <canvas id="canvas" style="display:none;"></canvas>
@@ -75,32 +91,86 @@
     const scene = document.getElementById('scene');
     const speedSlider = document.getElementById('speedSlider');
     const speedValue = document.getElementById('speedValue');
+    const clearBtn = document.getElementById('clearBtn');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
+    const bg = document.getElementById("background");
+    const ropeOverlay = document.getElementById("ropeOverlay");
+    const ropeCtx = ropeOverlay.getContext("2d");
+    const toggleRope = document.getElementById("toggleRope");
 
-    // Rope coords (adjusted)
-    const startX = 129, startY = 370;
-    const endX   = 850, endY = 1;
+    // Natural size (set after image loads)
+    let natW = 1, natH = 1;
 
-    // Config
+    bg.onload = () => {
+      natW = bg.naturalWidth;
+      natH = bg.naturalHeight;
+      resizeOverlay();
+    };
+    window.addEventListener("resize", resizeOverlay);
+
+    function resizeOverlay() {
+      ropeOverlay.width = bg.clientWidth;
+      ropeOverlay.height = bg.clientHeight;
+    }
+
+    // Rope line (coords in original natural image)
+    const ropeStart = { x: 129, y: 450 };
+    const ropeEnd   = { x: 940, y: 1 };
+
+    // Crop settings (as % of height)
+    const TOP_CROP = 0.1;    // remove top 10%
+    const BOTTOM_CROP = 0.2; // remove bottom 20%
+
+    // Car animation state
     let cars = [];
     const MAX_CARS = 5;
     let SPEED = parseFloat(speedSlider.value);
-    let globalProgress = 0; // drives ALL cars
+    let globalProgress = 0;
 
     speedSlider.addEventListener('input', () => {
       SPEED = parseFloat(speedSlider.value);
       speedValue.textContent = SPEED.toFixed(4);
     });
 
+    clearBtn.addEventListener("click", () => {
+      cars.forEach(c => c.el.remove());
+      cars = [];
+    });
+
+    function drawRopeLine(startX, startY, endX, endY) {
+      ropeCtx.clearRect(0, 0, ropeOverlay.width, ropeOverlay.height);
+      if (!toggleRope.checked) return;
+      ropeCtx.strokeStyle = "red";
+      ropeCtx.lineWidth = 2;
+      ropeCtx.beginPath();
+      ropeCtx.moveTo(startX, startY);
+      ropeCtx.lineTo(endX, endY);
+      ropeCtx.stroke();
+    }
+
     function animateCars() {
       const time = Date.now();
 
-      cars.forEach((car, idx) => {
+      const bgW = bg.clientWidth;
+      const bgH = bg.clientHeight;
+
+      const scaleX = bgW / natW;
+      const scaleY = bgH / natH;
+
+      const startX = ropeStart.x * scaleX;
+      const startY = ropeStart.y * scaleY;
+      const endX = ropeEnd.x * scaleX;
+      const endY = ropeEnd.y * scaleY;
+
+      drawRopeLine(startX, startY, endX, endY);
+
+      cars.forEach(car => {
         let progress = (globalProgress + car.offset) % 1;
 
         const x = startX + (endX - startX) * progress;
         const y = startY + (endY - startY) * progress;
+
         const scale = 0.3 + (3 - 0.3) * progress;
         const swing = Math.sin(time / 500 + car.swingOffset) * 5;
 
@@ -120,12 +190,10 @@
     }
 
     function addCar(dataUrl) {
-      // If too many, remove oldest
       if (cars.length >= MAX_CARS) {
         cars[0].el.remove();
         cars.shift();
       }
-
       const container = document.createElement('div');
       container.className = "car-container";
       const imgEl = document.createElement('img');
@@ -138,7 +206,6 @@
         offset: 0,
         swingOffset: Math.random() * Math.PI * 2
       });
-
       rebuildOffsets();
     }
 
@@ -150,12 +217,19 @@
       reader.onload = function(e) {
         const img = new Image();
         img.onload = function() {
-          canvas.width = img.width;
-          canvas.height = img.height;
-          ctx.drawImage(img, 0, 0);
+          // Crop away top + bottom
+          const cropX = 0;
+          const cropY = img.height * TOP_CROP;
+          const cropW = img.width;
+          const cropH = img.height * (1 - TOP_CROP - BOTTOM_CROP);
 
-          // Make white transparent
-          let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          canvas.width = cropW;
+          canvas.height = cropH;
+          ctx.clearRect(0, 0, cropW, cropH);
+          ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+          // Make white background transparent
+          let imageData = ctx.getImageData(0, 0, cropW, cropH);
           let data = imageData.data;
           for (let i = 0; i < data.length; i += 4) {
             if (data[i] > 220 && data[i+1] > 220 && data[i+2] > 220) {
@@ -169,8 +243,6 @@
         img.src = e.target.result;
       };
       reader.readAsDataURL(file);
-
-      // reset input so same file can be re-added
       event.target.value = "";
     });
 
