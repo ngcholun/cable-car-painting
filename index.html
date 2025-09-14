@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cable Car Ride (Responsive Rope + Debug Line)</title>
+  <title>Cable Car Ride (Rope Editor)</title>
   <style>
     body {
       margin: 0;
@@ -37,6 +37,9 @@
       flex: 1;
       width: 100%;
       max-width: 1052px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
       overflow: hidden;
     }
     #background {
@@ -53,28 +56,45 @@
       width: 100%;
       height: 100%;
       pointer-events: none;
-      z-index: 1; /* rope above background */
+      z-index: 1;
+    }
+    .handle {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      background: yellow;
+      border: 2px solid red;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 3;
+      cursor: grab;
+      touch-action: none;
     }
     .car-container {
       position: absolute;
       transform-origin: center center;
-      z-index: 2; /* cars above rope */
+      z-index: 2;
     }
     .car-container img {
       width: 120px;
       transform-origin: top center;
     }
+    #coords {
+      color: white;
+      font-size: 0.8rem;
+      margin: 5px;
+    }
   </style>
 </head>
 <body>
-  <h1>🎨 Upload Cabin (Auto Crop Top + Bottom)</h1>
+  <h1>🎨 Upload Cabin (Drag Rope Ends to Adjust)</h1>
 
   <div id="controls">
     <label for="speedSlider">Speed:</label>
     <input type="range" id="speedSlider" min="0.0002" max="0.003" step="0.0001" value="0.0007">
     <span id="speedValue">0.0007</span>
-    <button id="clearBtn">Clear All Cars</button>
-    <label><input type="checkbox" id="toggleRope" checked> Show Rope</label>
+    <button id="clearBtn">Clear Cars</button>
+    <button id="toggleRopeBtn">Hide Rope</button>
   </div>
 
   <input type="file" id="upload" accept="image/*">
@@ -82,7 +102,11 @@
   <div id="scene">
     <img id="background" src="mountain.jpg" alt="Cable Car Background">
     <canvas id="ropeOverlay"></canvas>
+    <div id="handleStart" class="handle"></div>
+    <div id="handleEnd" class="handle"></div>
   </div>
+
+  <div id="coords">Coords: Start(129,450) End(940,1)</div>
 
   <canvas id="canvas" style="display:none;"></canvas>
 
@@ -92,14 +116,18 @@
     const speedSlider = document.getElementById('speedSlider');
     const speedValue = document.getElementById('speedValue');
     const clearBtn = document.getElementById('clearBtn');
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
     const bg = document.getElementById("background");
     const ropeOverlay = document.getElementById("ropeOverlay");
     const ropeCtx = ropeOverlay.getContext("2d");
-    const toggleRope = document.getElementById("toggleRope");
+    const toggleRopeBtn = document.getElementById("toggleRopeBtn");
+    const coordsEl = document.getElementById("coords");
 
-    // Natural size (set after image loads)
+    const handleStart = document.getElementById("handleStart");
+    const handleEnd = document.getElementById("handleEnd");
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
     let natW = 1, natH = 1;
 
     bg.onload = () => {
@@ -114,19 +142,29 @@
       ropeOverlay.height = bg.clientHeight;
     }
 
-    // Rope line (coords in original natural image)
-    const ropeStart = { x: 129, y: 450 };
-    const ropeEnd   = { x: 940, y: 1 };
+    // Rope endpoints in natural coords
+    let ropeStart = { x: 129, y: 450 };
+    let ropeEnd   = { x: 940, y: 1 };
 
-    // Crop settings (as % of height)
-    const TOP_CROP = 0.1;    // remove top 10%
-    const BOTTOM_CROP = 0.2; // remove bottom 20%
+    const TOP_CROP = 0.1;
+    const BOTTOM_CROP = 0.2;
 
-    // Car animation state
     let cars = [];
     const MAX_CARS = 5;
     let SPEED = parseFloat(speedSlider.value);
     let globalProgress = 0;
+
+    // Rope toggle state
+    let ropeVisible = true;
+    toggleRopeBtn.addEventListener("click", () => {
+      ropeVisible = !ropeVisible;
+      toggleRopeBtn.textContent = ropeVisible ? "Hide Rope" : "Show Rope";
+
+      // also hide drag handles + coords
+      handleStart.style.display = ropeVisible ? "block" : "none";
+      handleEnd.style.display   = ropeVisible ? "block" : "none";
+      coordsEl.style.display    = ropeVisible ? "block" : "none";
+    });
 
     speedSlider.addEventListener('input', () => {
       SPEED = parseFloat(speedSlider.value);
@@ -140,7 +178,7 @@
 
     function drawRopeLine(startX, startY, endX, endY) {
       ropeCtx.clearRect(0, 0, ropeOverlay.width, ropeOverlay.height);
-      if (!toggleRope.checked) return;
+      if (!ropeVisible) return;
       ropeCtx.strokeStyle = "red";
       ropeCtx.lineWidth = 2;
       ropeCtx.beginPath();
@@ -155,15 +193,23 @@
       const bgW = bg.clientWidth;
       const bgH = bg.clientHeight;
 
-      const scaleX = bgW / natW;
-      const scaleY = bgH / natH;
+      const scale = bgW / natW;
+      const displayH = natH * scale;
+      const offsetY = (bgH - displayH) / 2;
 
-      const startX = ropeStart.x * scaleX;
-      const startY = ropeStart.y * scaleY;
-      const endX = ropeEnd.x * scaleX;
-      const endY = ropeEnd.y * scaleY;
+      const startX = ropeStart.x * scale;
+      const startY = ropeStart.y * scale + offsetY;
+      const endX   = ropeEnd.x * scale;
+      const endY   = ropeEnd.y * scale + offsetY;
 
       drawRopeLine(startX, startY, endX, endY);
+
+      handleStart.style.left = startX + "px";
+      handleStart.style.top = startY + "px";
+      handleEnd.style.left = endX + "px";
+      handleEnd.style.top = endY + "px";
+
+      coordsEl.textContent = `Coords: Start(${Math.round(ropeStart.x)},${Math.round(ropeStart.y)}) End(${Math.round(ropeEnd.x)},${Math.round(ropeEnd.y)})`;
 
       cars.forEach(car => {
         let progress = (globalProgress + car.offset) % 1;
@@ -171,12 +217,12 @@
         const x = startX + (endX - startX) * progress;
         const y = startY + (endY - startY) * progress;
 
-        const scale = 0.3 + (3 - 0.3) * progress;
+        const scaleCar = 0.3 + (3 - 0.3) * progress;
         const swing = Math.sin(time / 500 + car.swingOffset) * 5;
 
         car.el.style.left = x + "px";
         car.el.style.top  = y + "px";
-        car.el.style.transform = `scale(${scale}) rotate(${swing}deg)`;
+        car.el.style.transform = `scale(${scaleCar}) rotate(${swing}deg)`;
       });
 
       globalProgress = (globalProgress + SPEED) % 1;
@@ -217,7 +263,6 @@
       reader.onload = function(e) {
         const img = new Image();
         img.onload = function() {
-          // Crop away top + bottom
           const cropX = 0;
           const cropY = img.height * TOP_CROP;
           const cropW = img.width;
@@ -228,7 +273,6 @@
           ctx.clearRect(0, 0, cropW, cropH);
           ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-          // Make white background transparent
           let imageData = ctx.getImageData(0, 0, cropW, cropH);
           let data = imageData.data;
           for (let i = 0; i < data.length; i += 4) {
@@ -245,6 +289,46 @@
       reader.readAsDataURL(file);
       event.target.value = "";
     });
+
+    // ----- Dragging handles -----
+    function makeDraggable(handle, target) {
+      let dragging = false;
+
+      function onDown(e) {
+        e.preventDefault();
+        dragging = true;
+        handle.style.cursor = "grabbing";
+      }
+      function onMove(e) {
+        if (!dragging) return;
+        const rect = scene.getBoundingClientRect();
+        const bgW = bg.clientWidth;
+        const scale = bgW / natW;
+        const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+        const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+
+        const bgH = bg.clientHeight;
+        const displayH = natH * scale;
+        const offsetY = (bgH - displayH) / 2;
+
+        target.x = x / scale;
+        target.y = (y - offsetY) / scale;
+      }
+      function onUp() {
+        dragging = false;
+        handle.style.cursor = "grab";
+      }
+
+      handle.addEventListener("mousedown", onDown);
+      handle.addEventListener("touchstart", onDown);
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("touchmove", onMove);
+      window.addEventListener("mouseup", onUp);
+      window.addEventListener("touchend", onUp);
+    }
+
+    makeDraggable(handleStart, ropeStart);
+    makeDraggable(handleEnd, ropeEnd);
 
     requestAnimationFrame(animateCars);
   </script>
