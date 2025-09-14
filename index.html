@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cable Car Ride (Adjustable Speed)</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100vh;
+    }
+    h1 {
+      font-size: 1.2rem;
+      margin: 10px;
+      text-align: center;
+      color: white;
+      background: rgba(0,0,0,0.6);
+      padding: 6px 12px;
+      border-radius: 6px;
+    }
+    #controls {
+      color: white;
+      margin: 8px;
+      font-size: 0.9rem;
+      text-align: center;
+    }
+    #upload {
+      margin: 10px;
+    }
+    #scene {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      max-width: 1052px;
+      overflow: hidden;
+    }
+    #background {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .car-container {
+      position: absolute;
+      transform-origin: center center;
+    }
+    .car-container img {
+      width: 120px;
+      transform-origin: top center;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎨 Add Up To 5 Cable Cars (Adjust Speed)</h1>
+
+  <div id="controls">
+    <label for="speedSlider">Speed:</label>
+    <input type="range" id="speedSlider" min="0.0002" max="0.003" step="0.0001" value="0.0007">
+    <span id="speedValue">0.0007</span>
+  </div>
+
+  <input type="file" id="upload" accept="image/*">
+  <div id="scene">
+    <img id="background" src="mountain.jpg" alt="Cable Car Background">
+  </div>
+
+  <canvas id="canvas" style="display:none;"></canvas>
+
+  <script>
+    const upload = document.getElementById('upload');
+    const scene = document.getElementById('scene');
+    const speedSlider = document.getElementById('speedSlider');
+    const speedValue = document.getElementById('speedValue');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Rope coords (adjusted)
+    const startX = 129, startY = 370;
+    const endX   = 850, endY = 1;
+
+    // Config
+    let cars = [];
+    const MAX_CARS = 5;
+    let SPEED = parseFloat(speedSlider.value);
+    let globalProgress = 0; // drives ALL cars
+
+    speedSlider.addEventListener('input', () => {
+      SPEED = parseFloat(speedSlider.value);
+      speedValue.textContent = SPEED.toFixed(4);
+    });
+
+    function animateCars() {
+      const time = Date.now();
+
+      cars.forEach((car, idx) => {
+        let progress = (globalProgress + car.offset) % 1;
+
+        const x = startX + (endX - startX) * progress;
+        const y = startY + (endY - startY) * progress;
+        const scale = 0.3 + (3 - 0.3) * progress;
+        const swing = Math.sin(time / 500 + car.swingOffset) * 5;
+
+        car.el.style.left = x + "px";
+        car.el.style.top  = y + "px";
+        car.el.style.transform = `scale(${scale}) rotate(${swing}deg)`;
+      });
+
+      globalProgress = (globalProgress + SPEED) % 1;
+      requestAnimationFrame(animateCars);
+    }
+
+    function rebuildOffsets() {
+      cars.forEach((car, idx) => {
+        car.offset = idx / cars.length;
+      });
+    }
+
+    function addCar(dataUrl) {
+      // If too many, remove oldest
+      if (cars.length >= MAX_CARS) {
+        cars[0].el.remove();
+        cars.shift();
+      }
+
+      const container = document.createElement('div');
+      container.className = "car-container";
+      const imgEl = document.createElement('img');
+      imgEl.src = dataUrl;
+      container.appendChild(imgEl);
+      scene.appendChild(container);
+
+      cars.push({
+        el: container,
+        offset: 0,
+        swingOffset: Math.random() * Math.PI * 2
+      });
+
+      rebuildOffsets();
+    }
+
+    upload.addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.drawImage(img, 0, 0);
+
+          // Make white transparent
+          let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          let data = imageData.data;
+          for (let i = 0; i < data.length; i += 4) {
+            if (data[i] > 220 && data[i+1] > 220 && data[i+2] > 220) {
+              data[i+3] = 0;
+            }
+          }
+          ctx.putImageData(imageData, 0, 0);
+
+          addCar(canvas.toDataURL("image/png"));
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+
+      // reset input so same file can be re-added
+      event.target.value = "";
+    });
+
+    requestAnimationFrame(animateCars);
+  </script>
+</body>
+</html>
